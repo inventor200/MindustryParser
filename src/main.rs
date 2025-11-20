@@ -15,8 +15,8 @@ enum AddressedValue {
     Int(u32),
     Long(u64),
     Float(f32),
-    String(Option<Box<String>>),
-    Binary(Option<Box<Vec<u8>>>)
+    String(Option<String>),
+    Binary(Option<Vec<u8>>)
 }
 
 impl fmt::Display for AddressedValue {
@@ -138,7 +138,7 @@ fn read_binary(buffer: &mut VecDeque<u8>, offset: &mut Cell<usize>) -> SettingsI
 
     SettingsItem {
         address: start_offset,
-        value: AddressedValue::Binary(Some(Box::new(series)))
+        value: AddressedValue::Binary(Some(series))
     }
 }
 
@@ -179,7 +179,7 @@ fn read_string(buffer: &mut VecDeque<u8>, offset: &mut Cell<usize>) -> SettingsI
 
     SettingsItem {
         address: start_offset,
-        value: AddressedValue::String(Some(Box::new(series)))
+        value: AddressedValue::String(Some(series))
     }
 }
 
@@ -209,20 +209,20 @@ fn main() -> io::Result<()> {
         println!("SYNTAX:");
         println!("mindustry_parser path/to/settings.bin --read <key> ...");
         println!("  Print the value and byte address of <key>");
-        println!("");
+        println!();
         println!("mindustry_parser path/to/settings.bin --write <key> <value> ...");
         println!("  Set <key> to <value>");
-        println!("");
+        println!();
         println!("mindustry_parser path/to/settings.bin --show-all");
         println!("  Prints all keys, values, and addresses found in the file");
-        println!("");
+        println!();
         println!("mindustry_parser path/to/settings.bin --pretend --write <key> <value>");
         println!("  The --pretend flag modifies the settings in memory only, and does not modify the file on disk");
-        println!("");
+        println!();
         println!("The above argument groups can be used multiple times in a sequence, as desired.");
         println!("  -r => alias for --read");
         println!("  -w => alias for --write");
-        println!("");
+        println!();
         println!("Valid boolean values for \"true\": 1 true t yes on active");
         println!("Valid boolean values for \"false\": 0 false f nil no off inactive");
         std::process::exit(0);
@@ -304,15 +304,12 @@ fn main() -> io::Result<()> {
 
             op_key = Some(arg);
 
-            match op {
-                Some(Operation::Read) => {
-                    let key = op_key.take().unwrap();
-                    let found_item = items.get(&key).unwrap();
-                    print!("{key}={found_item},");
-                    op = None;
-                    op_key = None;
-                },
-                _ => { }
+            if let Some(Operation::Read) = op {
+                let key = op_key.take().unwrap();
+                let found_item = items.get(&key).unwrap();
+                print!("{key}={found_item},");
+                op = None;
+                op_key = None;
             }
         }
         else {
@@ -325,7 +322,7 @@ fn main() -> io::Result<()> {
                 AddressedValue::Int(_) => *value = AddressedValue::Int(arg.parse::<u32>().expect("Bad positive integer: {arg}")),
                 AddressedValue::Long(_) => *value = AddressedValue::Long(arg.parse::<u64>().expect("Bad positive integer: {arg}")),
                 AddressedValue::Float(_) => *value = AddressedValue::Float(arg.parse::<f32>().expect("Bad floating point: {arg}")),
-                AddressedValue::String(_) => *value = AddressedValue::String(Some(Box::new(arg))),
+                AddressedValue::String(_) => *value = AddressedValue::String(Some(arg)),
                 AddressedValue::Binary(_) => panic!("Sorry; this software lacks an implementation for modifying byte lists.")
             }
             op = None;
@@ -334,7 +331,7 @@ fn main() -> io::Result<()> {
         }
     }
 
-    println!("");
+    println!();
 
     if is_dirty && !pretend {
         let mut out_buffer: Vec<u8> = Vec::new();
@@ -360,21 +357,13 @@ fn main() -> io::Result<()> {
                 AddressedValue::String(mut value) => {
                     out_buffer.push(4);
                     // Unbox the string
-                    let unboxed = value.take().unwrap().leak();
-                    // Clone it
-                    let cloned = String::from(&mut *unboxed);
-                    // Put the reference safely back into a box, to prevent memory leaks
-                    let reboxed = unsafe { Box::from_raw(unboxed) };
-                    // Delete the box
-                    drop(reboxed);
+                    let taken = value.take().unwrap();
                     // Write clone to buffer
-                    write_string_to_buffer(cloned, &mut out_buffer);
+                    write_string_to_buffer(taken, &mut out_buffer);
                 },
                 AddressedValue::Binary(mut value) => {
                     out_buffer.push(5);
-                    // Take the box
-                    let mut taken = value.take();
-                    let taken = taken.as_mut().unwrap();
+                    let mut taken = value.take().unwrap();
                     let len = taken.len() as u32;
 
                     // Write length
@@ -390,7 +379,7 @@ fn main() -> io::Result<()> {
         }
 
         let mut file = OpenOptions::new().write(true).truncate(true).open(&file_path)?;
-        file.write(&out_buffer[..])?;
+        file.write_all(&out_buffer[..])?;
 
         println!("The file has been modified.");
     }
